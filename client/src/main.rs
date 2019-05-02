@@ -48,17 +48,8 @@ fn parse_input(command: String) -> Result<Request, Cow<'static, str>> {
     match words.first() {
         None | Some(&"help") => {
             return Err("Commands:\n\
-                        create CHANNEL\n\
                         subscribe CHANNEL\n\
                         send CHANNEL MESSAGE...".into());
-        }
-
-        Some(&"create") => {
-            if words.len() != 2 {
-                return Err("Usage: create CHANNEL".into());
-            }
-
-            Ok(Request::Create(words[1].to_string()))
         }
 
         Some(&"subscribe") => {
