@@ -3,8 +3,8 @@
 
 use futures::executor::{self, ThreadPool};
 use futures::io::{AsyncWrite, AsyncWriteExt};
-use futures::prelude::*;
 use futures::lock::Mutex as FutureMutex;
+use futures::prelude::*;
 use futures::task::SpawnExt;
 use protocol::{Lines, Reply, Request};
 use romio::{TcpListener, TcpStream};
@@ -22,7 +22,7 @@ struct Outbound(Arc<FutureMutex<Box<dyn 'static + AsyncWrite + Send + Unpin>>>);
 
 #[derive(Debug, Default)]
 struct Channel {
-    subscribers: Vec<Outbound>
+    subscribers: Vec<Outbound>,
 }
 
 #[derive(Debug, Default)]
@@ -46,18 +46,23 @@ fn main() -> io::Result<()> {
             let stream = stream?;
             let peer_addr = stream.peer_addr()?;
             let my_channels = channels.clone();
-            threadpool.spawn(async move {
-                if let Err(e) = await!(handle_client(stream, my_channels)) {
-                    eprintln!("Connection with {} closed for error: {}", peer_addr, e);
-                }
-            }).expect("error spawning task");
+            threadpool
+                .spawn(async move {
+                    if let Err(e) = await!(handle_client(stream, my_channels)) {
+                        eprintln!("Connection with {} closed for error: {}", peer_addr, e);
+                    }
+                })
+                .expect("error spawning task");
         }
 
         Ok(())
     })
 }
 
-async fn handle_client(stream: TcpStream, channel_map: Arc<FutureMutex<ChannelMap>>) -> io::Result<()> {
+async fn handle_client(
+    stream: TcpStream,
+    channel_map: Arc<FutureMutex<ChannelMap>>,
+) -> io::Result<()> {
     let peer_addr = stream.peer_addr().expect("getting socket peer address");
     println!("Accepted connection from: {}", peer_addr);
 
@@ -69,11 +74,17 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<FutureMutex<ChannelMa
         match serde_json::de::from_reader(line?.as_bytes())? {
             Request::Subscribe(name) => {
                 let mut map = await!(channel_map.lock());
-                let channel = map.channels.entry(name.clone()).or_insert(Channel::default());
+                let channel = map
+                    .channels
+                    .entry(name.clone())
+                    .or_insert(Channel::default());
                 channel.subscribers.push(outbound.clone());
                 await!(send_reply(&outbound, Reply::Subscribed(name)))?;
             }
-            Request::Send { channel: name, message } => {
+            Request::Send {
+                channel: name,
+                message,
+            } => {
                 let maybe_subscribers = {
                     let map = await!(channel_map.lock());
                     map.channels
@@ -84,15 +95,21 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<FutureMutex<ChannelMa
                 if let Some(subscribers) = maybe_subscribers {
                     let reply = Reply::Message {
                         channel: name,
-                        message
+                        message,
                     };
 
-                    for subscriber in &subscribers {
-                        await!(send_reply(subscriber, reply.clone()))?;
+                    let many_futures = subscribers
+                        .iter()
+                        .map(|subscriber| send_reply(subscriber, reply.clone()));
+
+                    for result in await!(futures::future::join_all(many_futures)) {
+                        result?;
                     }
                 } else {
-                    await!(send_reply(&outbound,
-                                      Reply::Error(format!("no such channel: {}", name))))?;
+                    await!(send_reply(
+                        &outbound,
+                        Reply::Error(format!("no such channel: {}", name))
+                    ))?;
                 }
             }
         }

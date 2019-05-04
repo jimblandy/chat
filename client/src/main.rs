@@ -38,7 +38,10 @@ fn handle_sending(outbound: TcpStream) -> io::Result<()> {
         }
     }
 
-    outbound.into_inner().unwrap().shutdown(std::net::Shutdown::Both)?;
+    outbound
+        .into_inner()
+        .unwrap()
+        .shutdown(std::net::Shutdown::Both)?;
 
     Ok(())
 }
@@ -49,7 +52,8 @@ fn parse_input(command: String) -> Result<Request, Cow<'static, str>> {
         None | Some(&"help") => {
             return Err("Commands:\n\
                         subscribe CHANNEL\n\
-                        send CHANNEL MESSAGE...".into());
+                        send CHANNEL MESSAGE..."
+                .into());
         }
 
         Some(&"subscribe") => {

@@ -3,4 +3,5 @@ members = [
         "client",
         "protocol",
         "server",
+        "sync-server",
 ]

@@ -37,8 +37,7 @@ impl<R> Lines<R> {
 
     fn drain_to_end(&mut self) -> io::Result<String> {
         let line_bytes = Vec::from(replace(&mut self.buf, VecDeque::new()));
-        String::from_utf8(line_bytes)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        String::from_utf8(line_bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 }
 
