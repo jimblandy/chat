@@ -16,9 +16,15 @@ fn main() -> io::Result<()> {
     });
 
     let receiving_thread = std::thread::spawn(move || {
-        if let Err(e) = handle_receiving(inbound) {
-            eprintln!("Error receiving: {}", e);
-        }
+        let status = match handle_receiving(inbound) {
+            Err(e) => {
+                eprintln!("Error receiving: {}", e);
+                1
+            }
+            Ok(()) => 0,
+        };
+
+        std::process::exit(status);
     });
 
     sending_thread.join().unwrap();

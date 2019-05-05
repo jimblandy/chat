@@ -1,42 +1,44 @@
 #![feature(async_await, await_macro)]
-#![allow(unused_imports, dead_code)]
+
+mod lines;
 
 use futures::executor::{self, ThreadPool};
+use futures::future::join_all;
 use futures::io::{AsyncWrite, AsyncWriteExt};
-use futures::lock::Mutex as FutureMutex;
+use futures::lock::Mutex;
 use futures::prelude::*;
 use futures::task::SpawnExt;
-use protocol::{Lines, Reply, Request};
+use lines::Lines;
+use protocol::{Reply, Request};
 use romio::{TcpListener, TcpStream};
 use std::collections::HashMap;
 use std::io;
 use std::marker::Unpin;
+use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 
-/// A connection to a client, from which we can read `Request` objects.
-struct Incoming(Box<dyn AsyncRead>);
-
 /// A connection to a client, to which we can write serialized `Reply` objects.
-#[derive(Clone, Debug)]
-struct Outbound(Arc<FutureMutex<Box<dyn 'static + AsyncWrite + Send + Unpin>>>);
+#[derive(Clone)]
+struct Outbound(Arc<Mutex<Box<dyn 'static + AsyncWrite + Send + Unpin>>>);
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct Channel {
     subscribers: Vec<Outbound>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct ChannelMap {
     channels: HashMap<String, Channel>,
 }
 
 fn main() -> io::Result<()> {
     executor::block_on(async {
-        let channels = Arc::new(FutureMutex::new(ChannelMap::default()));
-
         let mut threadpool = ThreadPool::new()?;
 
-        let addr = "0.0.0.0:9999".parse().unwrap();
+        let channels = Arc::new(Mutex::new(ChannelMap::default()));
+
+        let addr = SocketAddr::from_str("0.0.0.0:9999").unwrap();
         let mut listener = TcpListener::bind(&addr)?;
         let mut incoming = listener.incoming();
 
@@ -46,28 +48,26 @@ fn main() -> io::Result<()> {
             let stream = stream?;
             let peer_addr = stream.peer_addr()?;
             let my_channels = channels.clone();
-            threadpool
-                .spawn(async move {
-                    if let Err(e) = await!(handle_client(stream, my_channels)) {
+            threadpool.spawn(async move {
+                match await!(handle_client(stream, my_channels)) {
+                    Ok(()) => println!("Closing connection from: {}", peer_addr),
+                    Err(e) => {
                         eprintln!("Connection with {} closed for error: {}", peer_addr, e);
                     }
-                })
-                .expect("error spawning task");
+                }
+            }).expect("error spawning task");
         }
 
         Ok(())
     })
 }
 
-async fn handle_client(
-    stream: TcpStream,
-    channel_map: Arc<FutureMutex<ChannelMap>>,
-) -> io::Result<()> {
+async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -> io::Result<()> {
     let peer_addr = stream.peer_addr().expect("getting socket peer address");
     println!("Accepted connection from: {}", peer_addr);
 
     let (inbound, outbound) = stream.split();
-    let outbound = Outbound(Arc::new(FutureMutex::new(Box::new(outbound))));
+    let outbound = Outbound(Arc::new(Mutex::new(Box::new(outbound))));
 
     let mut lines = Lines::new(inbound);
     while let Some(line) = await!(lines.next()) {
@@ -98,13 +98,16 @@ async fn handle_client(
                         message,
                     };
 
-                    let many_futures = subscribers
+                    // Send to each subscriber, in order.
+                    // for subscriber in &subscribers {
+                    //     await!(send_reply(subscriber, reply.clone()))?;
+                    // }
+
+                    // Do all the sends in parallel.
+                    let sends = subscribers
                         .iter()
                         .map(|subscriber| send_reply(subscriber, reply.clone()));
-
-                    for result in await!(futures::future::join_all(many_futures)) {
-                        result?;
-                    }
+                    await!(join_all(sends)).into_iter().collect::<io::Result<()>>()?;
                 } else {
                     await!(send_reply(
                         &outbound,
@@ -114,8 +117,6 @@ async fn handle_client(
             }
         }
     }
-
-    println!("Closing connection from: {}", peer_addr);
 
     Ok(())
 }

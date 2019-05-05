@@ -1,7 +1,6 @@
-use futures::io::{AsyncRead, AsyncReadExt};
+use futures::io::AsyncRead;
 use futures::stream::Stream;
 use futures::task::{Context, Poll};
-use std::cmp::min;
 use std::collections::VecDeque;
 use std::io;
 use std::marker::Unpin;
