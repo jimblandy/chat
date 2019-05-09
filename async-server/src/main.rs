@@ -1,14 +1,11 @@
 #![feature(async_await, await_macro)]
 
-mod lines;
-
 use futures::executor::{self, ThreadPool};
 use futures::future::join_all;
 use futures::io::{AsyncWrite, AsyncWriteExt};
 use futures::lock::Mutex;
 use futures::prelude::*;
 use futures::task::SpawnExt;
-use lines::Lines;
 use protocol::{Reply, Request};
 use romio::{TcpListener, TcpStream};
 use std::collections::HashMap;
@@ -69,7 +66,7 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
     let (inbound, outbound) = stream.split();
     let outbound = Outbound(Arc::new(Mutex::new(Box::new(outbound))));
 
-    let mut lines = Lines::new(inbound);
+    let mut lines = protocol::Lines::new(inbound);
     while let Some(line) = await!(lines.next()) {
         match serde_json::de::from_reader(line?.as_bytes())? {
             Request::Subscribe(name) => {

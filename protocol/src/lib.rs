@@ -1,5 +1,8 @@
 #![allow(unused_imports)]
 
+mod lines;
+
+pub use lines::Lines;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
