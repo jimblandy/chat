@@ -19,15 +19,15 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 /// A connection to a client, to which we can write serialized `Reply` objects.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Outbound(Arc<Mutex<Box<dyn 'static + AsyncWrite + Send + Unpin>>>);
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct Channel {
-    subscribers: Vec<Outbound>,
+    subscribers: HashMap<SocketAddr, Outbound>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct ChannelMap {
     channels: HashMap<String, Channel>,
 }
@@ -50,7 +50,9 @@ fn main() -> io::Result<()> {
             let my_channels = channels.clone();
             threadpool.spawn(async move {
                 match await!(handle_client(stream, my_channels)) {
-                    Ok(()) => println!("Closing connection from: {}", peer_addr),
+                    Ok(()) => {
+                        println!("Closing connection from: {}", peer_addr);
+                    },
                     Err(e) => {
                         eprintln!("Connection with {} closed for error: {}", peer_addr, e);
                     }
@@ -78,7 +80,7 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
                     .channels
                     .entry(name.clone())
                     .or_insert(Channel::default());
-                channel.subscribers.push(outbound.clone());
+                channel.subscribers.insert(peer_addr.clone(), outbound.clone());
                 await!(send_reply(&outbound, Reply::Subscribed(name)))?;
             }
             Request::Send {
@@ -106,7 +108,7 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
                     // Do all the sends in parallel.
                     let sends = subscribers
                         .iter()
-                        .map(|subscriber| send_reply(subscriber, reply.clone()));
+                        .map(|(_addr, out)| send_reply(out, reply.clone()));
                     await!(join_all(sends)).into_iter().collect::<io::Result<()>>()?;
                 } else {
                     await!(send_reply(
@@ -117,7 +119,14 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
             }
         }
     }
-
+    let mut dot = await!(channel_map.lock());
+    for (name, chan) in dot.channels.iter_mut() {
+        chan.subscribers.remove(&peer_addr);
+        if chan.subscribers.is_empty() {
+            // dot.channels.remove(name);
+            println!("{:?}", name)
+        }
+    }
     Ok(())
 }
 
