@@ -46,5 +46,5 @@ whatever messages are sent to channels they're subscribed to.
 
 Known bugs:
 
-- The server doesn't properly clean up the subscribers lists when a client
-  closes the connection.
+- The server doesn't properly clean up the channel lists when a client
+  closes the connection. 
