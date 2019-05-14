@@ -20,15 +20,15 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 /// A connection to a client, to which we can write serialized `Reply` objects.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct Outbound(Arc<Mutex<Box<dyn 'static + AsyncWrite + Send + Unpin>>>);
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 struct Channel {
     subscribers: HashMap<SocketAddr, Outbound>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 struct ChannelMap {
     channels: HashMap<String, Channel>,
 }
@@ -126,7 +126,6 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
     for name in subscriptions.iter() {
         let chan =  map.channels.get_mut(name).unwrap();
         chan.subscribers.remove(&peer_addr);
-        println!("A {:?}\n", chan.subscribers );
         if chan.subscribers.is_empty() {
             map.channels.remove(name);
             if map.channels.is_empty() {
