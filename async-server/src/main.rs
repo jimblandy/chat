@@ -1,15 +1,16 @@
 #![feature(async_await, await_macro)]
 
 use futures::executor::{self, ThreadPool};
-use futures::future::join_all;
 use futures::io::{AsyncWrite, AsyncWriteExt};
 use futures::lock::Mutex;
 use futures::prelude::*;
+use futures::stream::FuturesUnordered;
 use futures::task::SpawnExt;
 use protocol::{Reply, Request};
 use romio::{TcpListener, TcpStream};
 use std::collections::HashMap;
 use std::io;
+use std::iter::FromIterator;
 use std::marker::Unpin;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -101,10 +102,13 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
                     // }
 
                     // Do all the sends in parallel.
-                    let sends = subscribers
-                        .iter()
-                        .map(|subscriber| send_reply(subscriber, reply.clone()));
-                    await!(join_all(sends)).into_iter().collect::<io::Result<()>>()?;
+                    let mut result_stream = FuturesUnordered::from_iter(
+                        subscribers
+                            .iter()
+                            .map(|subscriber| send_reply(subscriber, reply.clone())));
+                    while let Some(result) = await!(result_stream.next()) {
+                        result?;
+                    }
                 } else {
                     await!(send_reply(
                         &outbound,
