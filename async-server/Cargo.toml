@@ -5,7 +5,7 @@ authors = ["Jim Blandy <jimb@red-bean.com>"]
 edition = "2018"
 
 [dependencies]
-futures-preview = "0.3.0-alpha.15"
+futures-preview = "0.3.0-alpha.16"
 protocol = { path = "../protocol" }
-romio = "0.3.0-alpha.6"
+romio = "0.3.0-alpha.8"
 serde_json = "1.0"

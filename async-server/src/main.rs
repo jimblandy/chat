@@ -42,12 +42,12 @@ fn main() -> io::Result<()> {
 
         println!("Listening on {:?}", addr);
 
-        while let Some(stream) = await!(incoming.next()) {
+        while let Some(stream) = incoming.next().await {
             let stream = stream?;
             let peer_addr = stream.peer_addr()?;
             let my_channels = channels.clone();
             threadpool.spawn(async move {
-                match await!(handle_client(stream, my_channels)) {
+                match handle_client(stream, my_channels).await {
                     Ok(()) => println!("Closing connection from: {}", peer_addr),
                     Err(e) => {
                         eprintln!("Connection with {} closed for error: {}", peer_addr, e);
@@ -68,23 +68,23 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
     let outbound = Outbound(Arc::new(Mutex::new(Box::new(outbound))));
 
     let mut lines = protocol::Lines::new(inbound);
-    while let Some(line) = await!(lines.next()) {
+    while let Some(line) = lines.next().await {
         match serde_json::de::from_reader(line?.as_bytes())? {
             Request::Subscribe(name) => {
-                let mut map = await!(channel_map.lock());
+                let mut map = channel_map.lock().await;
                 let channel = map
                     .channels
                     .entry(name.clone())
                     .or_insert(Channel::default());
                 channel.subscribers.push(outbound.clone());
-                await!(send_reply(&outbound, Reply::Subscribed(name)))?;
+                send_reply(&outbound, Reply::Subscribed(name)).await?;
             }
             Request::Send {
                 channel: name,
                 message,
             } => {
                 let maybe_subscribers = {
-                    let map = await!(channel_map.lock());
+                    let map = channel_map.lock().await;
                     map.channels
                         .get(&name)
                         .map(|channel| channel.subscribers.clone())
@@ -98,7 +98,7 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
 
                     // Send to each subscriber, in order.
                     // for subscriber in &subscribers {
-                    //     await!(send_reply(subscriber, reply.clone()))?;
+                    //     send_reply(subscriber, reply.clone()).await?;
                     // }
 
                     // Do all the sends in parallel.
@@ -106,14 +106,14 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
                         subscribers
                             .iter()
                             .map(|subscriber| send_reply(subscriber, reply.clone())));
-                    while let Some(result) = await!(result_stream.next()) {
+                    while let Some(result) = result_stream.next().await {
                         result?;
                     }
                 } else {
-                    await!(send_reply(
+                    send_reply(
                         &outbound,
                         Reply::Error(format!("no such channel: {}", name))
-                    ))?;
+                    ).await?;
                 }
             }
         }
@@ -126,8 +126,8 @@ async fn send_reply<'a>(outbound: &'a Outbound, reply: Reply) -> io::Result<()> 
     let mut encoded = serde_json::ser::to_string(&reply)?;
     encoded.push('\n');
 
-    let mut lock = await!(outbound.0.lock());
-    await!(lock.write_all(encoded.as_bytes()))?;
-    await!(lock.flush())?;
+    let mut lock = outbound.0.lock().await;
+    lock.write_all(encoded.as_bytes()).await?;
+    lock.flush().await?;
     Ok(())
 }
