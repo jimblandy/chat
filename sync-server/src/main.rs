@@ -32,12 +32,10 @@ fn main() -> io::Result<()> {
             let stream = stream?;
             let peer_addr = stream.peer_addr()?;
             let my_channels = channels.clone();
-            std::thread::spawn(move || {
-                match handle_client(stream, my_channels) {
-                    Ok(()) => println!("Closing connection from: {}", peer_addr),
-                    Err(e) => {
-                        eprintln!("Connection with {} closed for error: {}", peer_addr, e);
-                    }
+            std::thread::spawn(move || match handle_client(stream, my_channels) {
+                Ok(()) => println!("Closing connection from: {}", peer_addr),
+                Err(e) => {
+                    eprintln!("Connection with {} closed for error: {}", peer_addr, e);
                 }
             });
         }
@@ -88,7 +86,7 @@ fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -> io::
                 } else {
                     send_reply(
                         &outbound,
-                        Reply::Error(format!("no such channel: {}", name))
+                        Reply::Error(format!("no such channel: {}", name)),
                     )?;
                 }
             }

@@ -1,5 +1,7 @@
+mod barrier;
 mod lines;
 
+pub use barrier::{Barrier, BarrierReadyFuture};
 pub use lines::Lines;
 use serde::{Deserialize, Serialize};
 

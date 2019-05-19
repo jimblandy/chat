@@ -1,0 +1,11 @@
+[package]
+name = "massive-client"
+version = "0.1.0"
+authors = ["Jim Blandy <jimb@red-bean.com>"]
+edition = "2018"
+
+[dependencies]
+futures-preview = "0.3.0-alpha.15"
+protocol = { path = "../protocol" }
+romio = "0.3.0-alpha.6"
+serde_json = "1.0"

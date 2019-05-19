@@ -96,8 +96,9 @@ fn send_request(outbound: &mut BufWriter<TcpStream>, request: &Request) -> io::R
 fn handle_receiving(inbound: TcpStream) -> io::Result<()> {
     let inbound = BufReader::new(inbound);
     for line in inbound.lines() {
-        let reply: Reply = serde_json::de::from_reader(line?.as_bytes())?;
-        println!("Reply: {:?}", reply);
+        let _reply: Reply = serde_json::de::from_reader(line?.as_bytes())?;
+        //println!("Reply: {:?}", reply);
+        eprint!(".");
     }
     Ok(())
 }

@@ -2,6 +2,7 @@
 members = [
         "async-server",
         "client",
+        "massive-client",
         "protocol",
         "sync-server",
 ]
