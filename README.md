@@ -43,8 +43,3 @@ commands:
 
 Other clients in other windows should be able to connect as well, and receive
 whatever messages are sent to channels they're subscribed to.
-
-Known bugs:
-
-- The server doesn't properly clean up the subscribers lists when a client
-  closes the connection.
