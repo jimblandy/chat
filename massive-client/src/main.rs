@@ -1,6 +1,6 @@
 #![feature(async_await, await_macro, error_iter)]
 
-use futures::executor;
+use futures::executor::ThreadPool;
 use futures::future::{join, ready};
 use futures::prelude::*;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -52,7 +52,7 @@ fn run() -> io::Result<()> {
     let addr = SocketAddr::from_str("0.0.0.0:9999").unwrap();
     let barrier = Barrier::new(num_clients);
 
-    let mut all_clients = (0..num_clients)
+    let all_clients = (0..num_clients)
         .map(|_client_ix| {
             let barrier = barrier.wait();
             async move {
@@ -104,10 +104,15 @@ fn run() -> io::Result<()> {
                 results.0.and(results.1)
             }
         })
-        .collect::<FuturesUnordered<_>>()
-        .filter(|r| ready(r.is_err()));
+        .collect::<FuturesUnordered<_>>();
 
-    let result = executor::block_on(all_clients.next()).unwrap_or(Ok(()));
+    let mut thread_pool = ThreadPool::new().expect("failed to create threadpool");
+
+    // Run until someone returns an error, or everyone succeeds.
+    let result = thread_pool.run(all_clients
+                                 .filter(|r| ready(r.is_err()))
+                                 .next())
+        .unwrap_or(Ok(()));
 
     eprintln!();
 
