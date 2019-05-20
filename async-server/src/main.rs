@@ -1,7 +1,7 @@
 #![feature(async_await, await_macro)]
 
 use futures::executor::LocalPool;
-use futures::io::{AsyncWrite, AsyncWriteExt};
+use futures::io::{AsyncWrite, AsyncWriteExt, BufReader};
 use futures::lock::Mutex;
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
@@ -73,7 +73,7 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
     let (inbound, outbound) = stream.split();
     let outbound = Outbound(Arc::new(Mutex::new(Box::new(outbound))));
 
-    let mut lines = protocol::Lines::new(inbound);
+    let mut lines = BufReader::new(inbound).lines();
     while let Some(line) = lines.next().await {
         if REQUESTS_SERVED.fetch_add(1, Ordering::SeqCst) % 1000 == 0 {
             eprint!(".");

@@ -2,9 +2,10 @@
 
 use futures::executor::ThreadPool;
 use futures::future::{join, ready};
+use futures::io::BufReader;
 use futures::prelude::*;
 use futures::stream::{FuturesUnordered, StreamExt};
-use protocol::{Barrier, Lines, Request};
+use protocol::{Barrier, Request};
 use romio::TcpStream;
 use std::borrow::Cow;
 use std::error::Error;
@@ -58,7 +59,7 @@ fn run() -> io::Result<()> {
             async move {
                 let stream = TcpStream::connect(&addr).await?;
                 let (inbound, mut outbound) = stream.split();
-                let mut inbound_lines = Lines::new(inbound);
+                let mut inbound_lines = BufReader::new(inbound).lines();
 
                 let subscribe_request = {
                     let mut request =
@@ -109,9 +110,8 @@ fn run() -> io::Result<()> {
     let mut thread_pool = ThreadPool::new().expect("failed to create threadpool");
 
     // Run until someone returns an error, or everyone succeeds.
-    let result = thread_pool.run(all_clients
-                                 .filter(|r| ready(r.is_err()))
-                                 .next())
+    let result = thread_pool
+        .run(all_clients.filter(|r| ready(r.is_err())).next())
         .unwrap_or(Ok(()));
 
     eprintln!();
