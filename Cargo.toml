@@ -4,5 +4,5 @@ members = [
         #"client",
         #"massive-client",
         "protocol",
-        #"sync-server",
+        "sync-server",
 ]

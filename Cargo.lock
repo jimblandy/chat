@@ -280,6 +280,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sync-server"
+version = "0.1.0"
+dependencies = [
+ "protocol",
+ "serde_json",
+]
+
+[[package]]
 name = "tokio"
 version = "1.19.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
