@@ -1,6 +1,6 @@
-use futures::future::Future;
-use futures::task::{Context, Poll, Waker};
-use std::mem::replace;
+use std::future::Future;
+use std::task::{Context, Poll, Waker};
+use std::mem::{replace, take};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
@@ -52,10 +52,10 @@ impl Future for BarrierReadyFuture {
             return Poll::Ready(());
         }
 
-        if let None = replace(&mut guard.wakers[self.index], Some(cx.waker().clone())) {
+        if replace(&mut guard.wakers[self.index], Some(cx.waker().clone())).is_none() {
             guard.polled += 1;
             if guard.polled == guard.total {
-                for waker in replace(&mut guard.wakers, Vec::new()) {
+                for waker in take(&mut guard.wakers) {
                     waker.unwrap().wake();
                 }
             }
