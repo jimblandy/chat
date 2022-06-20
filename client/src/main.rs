@@ -56,10 +56,10 @@ fn parse_input(command: String) -> Result<Request, Cow<'static, str>> {
     let words = command.split_whitespace().collect::<Vec<_>>();
     match words.first() {
         None | Some(&"help") => {
-            return Err("Commands:\n\
+            Err("Commands:\n\
                         subscribe CHANNEL\n\
                         send CHANNEL MESSAGE..."
-                .into());
+                .into())
         }
 
         Some(&"subscribe") => {
@@ -81,7 +81,7 @@ fn parse_input(command: String) -> Result<Request, Cow<'static, str>> {
             })
         }
         Some(other) => {
-            return Err(format!("Unrecognized command: {}", other).into());
+            Err(format!("Unrecognized command: {}", other).into())
         }
     }
 }
