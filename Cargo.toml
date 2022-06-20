@@ -1,8 +1,8 @@
 [workspace]
 members = [
         "async-server",
-        "client",
-        "massive-client",
+        #"client",
+        #"massive-client",
         "protocol",
-        "sync-server",
+        #"sync-server",
 ]

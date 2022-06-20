@@ -1,16 +1,12 @@
-#![feature(async_await, await_macro)]
-
-use futures::executor::LocalPool;
-use futures::io::{AsyncWrite, AsyncWriteExt, BufReader};
-use futures::lock::Mutex;
-use futures::prelude::*;
-use futures::stream::FuturesUnordered;
-use futures::task::SpawnExt;
+use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::sync::Mutex;
+use tokio_stream::{self as stream, StreamExt};
+use tokio_stream::wrappers::{TcpListenerStream};
+//use futures::task::SpawnExt;
 use protocol::{Reply, Request};
-use romio::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream};
 use std::collections::HashMap;
 use std::io;
-use std::iter::FromIterator;
 use std::marker::Unpin;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -33,47 +29,41 @@ struct ChannelMap {
 
 static REQUESTS_SERVED: AtomicUsize = AtomicUsize::new(0);
 
-fn main() -> io::Result<()> {
-    let mut threadpool = LocalPool::new();
-    let mut spawner = threadpool.spawner();
+#[tokio::main]
+async fn main() -> io::Result<()> {
+    let channels = Arc::new(Mutex::new(ChannelMap::default()));
 
-    threadpool.run_until(async {
-        let channels = Arc::new(Mutex::new(ChannelMap::default()));
+    let addr = SocketAddr::from_str("0.0.0.0:9999").unwrap();
+    let listener = TcpListener::bind(&addr).await?;
+    let mut incoming = TcpListenerStream::new(listener);
 
-        let addr = SocketAddr::from_str("0.0.0.0:9999").unwrap();
-        let mut listener = TcpListener::bind(&addr)?;
-        let mut incoming = listener.incoming();
+    println!("Listening on {:?}", addr);
 
-        println!("Listening on {:?}", addr);
+    while let Some(stream) = incoming.next().await {
+        let stream = stream?;
+        let peer_addr = stream.peer_addr()?;
+        let my_channels = channels.clone();
+        tokio::task::spawn(async move {
+            match handle_client(stream, my_channels).await {
+                Ok(()) => println!("Closing connection from: {}", peer_addr),
+                Err(e) => {
+                    eprintln!("Connection with {} closed for error: {}", peer_addr, e);
+                }
+            }
+        });
+    }
 
-        while let Some(stream) = incoming.next().await {
-            let stream = stream?;
-            let peer_addr = stream.peer_addr()?;
-            let my_channels = channels.clone();
-            spawner
-                .spawn(async move {
-                    match handle_client(stream, my_channels).await {
-                        Ok(()) => println!("Closing connection from: {}", peer_addr),
-                        Err(e) => {
-                            eprintln!("Connection with {} closed for error: {}", peer_addr, e);
-                        }
-                    }
-                })
-                .expect("error spawning task");
-        }
-
-        Ok(())
-    })
+    Ok(())
 }
 
 async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -> io::Result<()> {
     let peer_addr = stream.peer_addr().expect("getting socket peer address");
     println!("Accepted connection from: {}", peer_addr);
 
-    let (inbound, outbound) = stream.split();
+    let (inbound, outbound) = stream.into_split();
     let outbound = Outbound(Arc::new(Mutex::new(Box::new(outbound))));
 
-    let mut lines = BufReader::new(inbound).lines();
+    let mut lines = stream::wrappers::LinesStream::new(BufReader::new(inbound).lines());
     while let Some(line) = lines.next().await {
         if REQUESTS_SERVED.fetch_add(1, Ordering::SeqCst) % 1000 == 0 {
             eprint!(".");
@@ -89,7 +79,7 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
                 let channel = map
                     .channels
                     .entry(name.clone())
-                    .or_insert(Channel::default());
+                    .or_default();
                 channel.subscribers.push(outbound.clone());
                 send_reply(&outbound, Reply::Subscribed(name)).await?;
             }
@@ -116,31 +106,22 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
                     // }
 
                     // Do all the sends in parallel.
-                    let sends = subscribers.into_iter().map(|subscriber| {
-                        async {
-                            match send_reply(&subscriber, reply.clone()).await {
-                                Ok(()) => None,
-                                Err(_e) => {
-                                    //eprintln!("Error sending (dropping subscriber): {}", e);
-                                    Some(subscriber)
+                    for subscriber in subscribers {
+                        let channel_map = channel_map.clone();
+                        let reply = reply.clone();
+                        let name = name.clone();
+                        tokio::task::spawn(async move {
+                            if let Err(_e) = send_reply(&subscriber, reply).await {
+                                //eprintln!("Error sending (dropping subscriber): {}", _e);
+                                let mut map = channel_map.lock().await;
+                                if let Some(channel) = map.channels.get_mut(&name) {
+                                    channel
+                                        .subscribers
+                                        .retain(|out| !Arc::ptr_eq(&subscriber.0, &out.0));
                                 }
                             }
-                        }
-                    });
-
-                    let failed = FuturesUnordered::from_iter(sends)
-                        .filter_map(|maybe_failed| async { maybe_failed })
-                        .collect::<Vec<_>>()
-                        .await;
-
-                    if !failed.is_empty() {
-                        let mut map = channel_map.lock().await;
-                        if let Some(channel) = map.channels.get_mut(&name) {
-                            channel
-                                .subscribers
-                                .retain(|out| !failed.iter().any(|f| Arc::ptr_eq(&f.0, &out.0)));
-                        }
-                    }
+                        });
+                    };
                 } else {
                     send_reply(
                         &outbound,
@@ -155,7 +136,7 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
     Ok(())
 }
 
-async fn send_reply<'a>(outbound: &'a Outbound, reply: Reply) -> io::Result<()> {
+async fn send_reply(outbound: &Outbound, reply: Reply) -> io::Result<()> {
     let mut encoded = serde_json::ser::to_string(&reply)?;
     encoded.push('\n');
 
